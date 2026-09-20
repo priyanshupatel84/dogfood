@@ -1,0 +1,1 @@
+{"openapi":"3.0.3","info":{"title":"Dogfood 2026 API","version":"1.0.0"},"servers":[{"url":"http://localhost:3000"}],"paths":{"/api/health":{"get":{"summary":"Health check","responses":{"200":{"description":"Service health"}}}}}}

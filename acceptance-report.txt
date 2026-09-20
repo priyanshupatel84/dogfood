@@ -1,0 +1,6 @@
+Dogfood 2026 acceptance suite
+
+T1 Core lifecycle: scaffolded
+T2 Judging normalization: scaffolded
+T3 Voting and audit: scaffolded
+T4 OpenAPI and cryptographic exports: scaffolded
