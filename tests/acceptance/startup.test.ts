@@ -29,7 +29,27 @@ describe('single-command startup (docker compose up)', () => {
 
   it('seeds automatically once postgres and seaweedfs are healthy', () => {
     expect(compose).toMatch(/seed:\n\s+build: \./)
-    expect(compose).toMatch(/command: \["npm", "run", "db:seed"\]/)
+    expect(compose).toMatch(/npm run db:seed/)
+  })
+
+  it('runs boot migrations without the version-gated drizzle-kit CLI', () => {
+    // drizzle-kit 0.28 exits 1 on drizzle-orm 0.35 (compatibilityVersion 9
+    // vs required 10), which killed the seed service. Boot must use
+    // drizzle-orm's own migrator instead.
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(pkg.scripts['db:migrate']).not.toMatch(/drizzle-kit/)
+    const migrateScript = readFileSync(join(root, 'scripts', 'migrate.ts'), 'utf8')
+    expect(migrateScript).toMatch(/postgres-js\/migrator/)
+  })
+
+  it('migrates before seeding so a fresh volume boots without deadlocks', () => {
+    const seedBlock = compose.slice(compose.indexOf('\n  seed:'))
+    const migrateAt = seedBlock.indexOf('db:migrate')
+    const seedAt = seedBlock.indexOf('db:seed')
+    expect(migrateAt).toBeGreaterThanOrEqual(0)
+    expect(seedAt).toBeGreaterThan(migrateAt)
   })
 
   it('serves the app only after seeding succeeds', () => {

@@ -53,7 +53,9 @@ services:
   # NOT run on boot; it is ready to run with zero setup (see `cli` service).
   seed:
     build: .
-    command: ["npm", "run", "db:seed"]
+    # Migrate first: on a fresh volume no tables exist yet, and the app waits
+    # on this service, so the app entrypoint migration alone would never run.
+    command: ["sh", "-c", "npm run db:migrate && npm run db:seed"]
     depends_on:
       postgres:
         condition: service_healthy
