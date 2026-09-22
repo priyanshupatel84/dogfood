@@ -13,6 +13,12 @@ import {
   type EventRole,
   type UserRole,
 } from '../db/schema'
+import type {
+  AssignEventRoleInput,
+  CreateUserInput,
+  IssuedSession,
+  SessionUser,
+} from './types'
 
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -71,13 +77,6 @@ export function normalizeRoleInput(input: string, eventScoped: boolean): UserRol
 
 // Users -----------------------------------------------------------------------
 
-export interface CreateUserInput {
-  email: string
-  password: string
-  role?: UserRole
-  organization?: string
-}
-
 export async function createUser(input: CreateUserInput): Promise<DbUser> {
   const email = input.email.trim().toLowerCase()
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1)
@@ -104,27 +103,22 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   return user ?? null
 }
 
+// Server-only user listing for dogfood-cli (scripts/cli.ts). This is NOT an
+// HTTP endpoint — there is deliberately no /api/users route, so no caller
+// over the network can enumerate accounts. The result is intentionally
+// unbounded (oldest-first): it serves an offline admin tool, not a paginated
+// public endpoint, and instance user counts stay in the hundreds.
 export async function listUsers(): Promise<DbUser[]> {
   return db.select().from(users).orderBy(users.createdAt)
 }
 
 // Sessions (opaque, revocable; only the hash is stored). ------------------------
 
-export interface IssuedSession {
-  token: string
-  expiresAt: Date
-}
-
 export async function createSession(userId: string): Promise<IssuedSession> {
   const token = createSessionToken()
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS)
   await db.insert(sessions).values({ id: hashSessionToken(token), userId, expiresAt })
   return { token, expiresAt }
-}
-
-export interface SessionUser {
-  user: DbUser
-  expiresAt: Date
 }
 
 export async function getSessionUser(token: string): Promise<SessionUser | null> {
@@ -172,13 +166,6 @@ export async function listUserEventRoles(userId: string) {
   return db.select().from(eventRoles).where(eq(eventRoles.userId, userId))
 }
 
-export interface AssignEventRoleInput {
-  actor: DbUser
-  eventId: string
-  targetUserId: string
-  role: EventRole
-}
-
 export async function assignEventRole(input: AssignEventRoleInput) {
   const [event] = await db.select({ id: events.id }).from(events).where(eq(events.id, input.eventId)).limit(1)
   if (!event) throw new AuthError('EVENT_NOT_FOUND', 404)
@@ -211,3 +198,23 @@ export async function assignEventRole(input: AssignEventRoleInput) {
 export function isImpersonationEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV !== 'production' && env.OFFLINE_MODE === 'true'
 }
+
+// Browser storage model (auth threat surface) ----------------------------------
+//
+// The browser holds exactly ONE value: an opaque 256-bit random token in an
+// HttpOnly, Secure (production), SameSite=Lax cookie. JavaScript cannot read
+// it, and no user id, email, or role is EVER stored client-side (no JWTs, no
+// localStorage). On every request the server hashes the presented token,
+// looks up the sessions row, and re-resolves identity plus the effective role
+// from users/event_roles in Postgres.
+//
+// This means a role cannot be changed from the browser: there is nothing to
+// edit, and any forged or tampered cookie value matches no stored session
+// hash, so the request fails closed with 401. Guessing a live token requires
+// 2^256 tries. A stolen token works until revokeSession deletes its row, so
+// logout and admin kicks take effect instantly — use short TTLs and Secure
+// cookies in production to shrink that window further.
+//
+// Auth failures are reported through logAuthEvent in ./http (one JSON line
+// per rejected request with route, method, and error code) so offline
+// operators can tail server logs instead of flying blind.

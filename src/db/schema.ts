@@ -45,9 +45,8 @@ export const users = pgTable("users", {
   organization: text("organization"),
   createdAt: createdAt(),
 });
-export const sessions = pgTable(
-  "sessions",
-  {
+
+export const sessions = pgTable("sessions", {
     id: text("id").primaryKey(),
     userId: uuid("user_id")
       .notNull()
@@ -57,20 +56,27 @@ export const sessions = pgTable(
   },
   (t) => ({ sessionsUserIdx: index("sessions_user_idx").on(t.userId) }),
 );
+
 export const events = pgTable("events", {
   id: id(),
   title: text("title").notNull(),
   slug: text("slug").notNull().unique(),
   status: eventStatusEnum("status").notNull().default("DRAFT"),
   startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  // Every phase carries an explicit start and end. The *_end / *_start
+  // columns below default (in deriveEventStatus) to the legacy implied
+  // boundaries, so rows written before they existed behave identically.
   registrationStart: timestamp("registration_start", { withTimezone: true }),
+  registrationEnd: timestamp("registration_end", { withTimezone: true }),
   submissionStart: timestamp("submission_start", { withTimezone: true }),
   submissionDeadline: timestamp("submission_deadline", {
     withTimezone: true,
   }).notNull(),
+  judgingStart: timestamp("judging_start", { withTimezone: true }),
   judgingEndTime: timestamp("judging_end_time", {
     withTimezone: true,
   }).notNull(),
+  publicVotingStart: timestamp("public_voting_start", { withTimezone: true }),
   publicVotingEndTime: timestamp("public_voting_end_time", {
     withTimezone: true,
   }).notNull(),
@@ -106,9 +112,7 @@ export const teams = pgTable("teams", {
   isLocked: boolean("is_locked").notNull().default(false),
   createdAt: createdAt(),
 });
-export const teamMembers = pgTable(
-  "team_members",
-  {
+export const teamMembers = pgTable("team_members", {
     id: id(),
     teamId: uuid("team_id")
       .notNull()
@@ -121,9 +125,7 @@ export const teamMembers = pgTable(
   },
   (t) => ({ teamMemberUnique: uniqueIndex("team_member_unique").on(t.teamId, t.userId) }),
 );
-export const submissions = pgTable(
-  "submissions",
-  {
+export const submissions = pgTable("submissions", {
     id: id(),
     teamId: uuid("team_id")
       .notNull()
@@ -157,9 +159,7 @@ export const rubrics = pgTable("rubrics", {
     .$type<Array<{ id: string; label: string; weight: number }>>()
     .notNull(),
 });
-export const judgeAssignments = pgTable(
-  "judge_assignments",
-  {
+export const judgeAssignments = pgTable("judge_assignments", {
     id: id(),
     eventId: uuid("event_id")
       .notNull()
@@ -233,9 +233,7 @@ export const auditLogs = pgTable("audit_logs", {
 // Event-contextual RBAC: a user's permission is scoped to (event_id, role).
 // users.role carries only the global flag (SUPERADMIN bypasses all event checks);
 // every other permission resolves through this table, defaulting to PARTICIPANT.
-export const eventRoles = pgTable(
-  "event_roles",
-  {
+export const eventRoles = pgTable("event_roles", {
     id: id(),
     eventId: uuid("event_id")
       .notNull()
@@ -301,28 +299,54 @@ export const allTables = {
   auditLogs,
 };
 // PostgreSQL production migrations should add pg_trgm, tsvector indexes, roster cardinality checks, and the prize floor trigger.
-export const constraints = {
-  minTeamSize: 1,
-  maxTeamSize: 4,
-  maxTaglineLength: 140,
-};
+// Roster limits mirror REQUIREMENTS §4 (Team Engine): $1 \le Team Size \le 4$,
+// enforced at the API boundary by validateTeamSize. They are constants by
+// default but overridable via TEAM_MIN_SIZE / TEAM_MAX_SIZE (e.g. staging
+// experiments); invalid values fall back to the product defaults and max is
+// always clamped to be >= min so the range can never invert.
+export function resolveConstraints(env: Record<string, string | undefined> = process.env): {
+  minTeamSize: number
+  maxTeamSize: number
+  maxTaglineLength: number
+} {
+  const minTeamSize = parsePositiveInt(env.TEAM_MIN_SIZE, 1)
+  const maxTeamSize = Math.max(parsePositiveInt(env.TEAM_MAX_SIZE, 4), minTeamSize)
+  return { minTeamSize, maxTeamSize, maxTaglineLength: 140 }
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback
+  const value = Number.parseInt(raw, 10)
+  return Number.isSafeInteger(value) && value >= 1 ? value : fallback
+}
+
+export const constraints = resolveConstraints();
 
 export function deriveEventStatus(
   event: {
     status: EventStatus;
     registrationStart?: Date | null;
+    registrationEnd?: Date | null;
     submissionStart?: Date | null;
     submissionDeadline: Date;
+    judgingStart?: Date | null;
     judgingEndTime: Date;
+    publicVotingStart?: Date | null;
     publicVotingEndTime: Date;
   },
   now = new Date(),
 ): EventStatus {
   if (event.status === "DRAFT") return "DRAFT";
-  if (now < (event.submissionStart ?? event.submissionDeadline))
-    return "REGISTRATION";
+  // Explicit per-phase boundaries win; each falls back to the legacy implied
+  // boundary so events without the newer columns derive exactly as before.
+  const registrationEnd =
+    event.registrationEnd ?? event.submissionStart ?? event.submissionDeadline;
+  const judgingStart = event.judgingStart ?? event.submissionDeadline;
+  const publicVotingStart = event.publicVotingStart ?? event.judgingEndTime;
+  if (now < registrationEnd) return "REGISTRATION";
   if (now <= event.submissionDeadline) return "SUBMISSION";
-  if (now <= event.judgingEndTime) return "JUDGING";
+  if (now < judgingStart) return "JUDGING";
+  if (now <= publicVotingStart) return "JUDGING";
   if (now <= event.publicVotingEndTime) return "PUBLIC_VOTING";
   return "ARCHIVED";
 }

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { listUserEventRoles } from '@/src/server/auth-service'
-import { authErrorResponse, publicUser, requireSession } from '@/src/server/http'
+import { authErrorResponse, publicUser, requireSession, routeContext } from '@/src/server/http'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireSession()
     const rows = await listUserEventRoles(session.user.id)
@@ -18,6 +18,6 @@ export async function GET() {
       })),
     })
   } catch (error) {
-    return authErrorResponse(error)
+    return authErrorResponse(error, routeContext(request))
   }
 }

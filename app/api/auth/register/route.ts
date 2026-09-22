@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { registerRequestSchema } from '@/src/lib/api/schemas'
 import { createSession, createUser } from '@/src/server/auth-service'
-import { authErrorResponse, parseBody, publicUser, withSessionCookie } from '@/src/server/http'
+import { authErrorResponse, parseBody, publicUser, routeContext, withSessionCookie } from '@/src/server/http'
 
 export async function POST(request: Request) {
   try {
@@ -14,6 +14,6 @@ export async function POST(request: Request) {
       request,
     )
   } catch (error) {
-    return authErrorResponse(error)
+    return authErrorResponse(error, routeContext(request))
   }
 }

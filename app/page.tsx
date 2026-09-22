@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { getSessionUser, isImpersonationEnabled, listUserEventRoles } from '@/src/server/auth-service'
-import ImpersonationSwitcher from './components/impersonation-switcher'
-import LogoutButton from './components/logout-button'
+import ImpersonationSwitcher from '@/components/auth/impersonation-switcher'
+import LogoutButton from '@/components/auth/logout-button'
 
 export default async function HomePage() {
   const token = (await cookies()).get('dogfood_session')?.value ?? ''

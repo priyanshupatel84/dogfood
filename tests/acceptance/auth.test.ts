@@ -151,4 +151,25 @@ describe('T1 migration ships event-contextual roles', () => {
     expect(sql).toContain('CREATE TABLE "event_roles"')
     expect(sql).toContain('CONSTRAINT "event_role_unique" UNIQUE("event_id","user_id")')
   })
+
+  it('resolves every journal entry to a migration file with real statements', () => {
+    const journal = JSON.parse(readFileSync(join(root, 'drizzle', 'meta', '_journal.json'), 'utf8')) as {
+      entries: Array<{ idx: number; tag: string; breakpoints: boolean }>
+    }
+    expect(journal.entries.length).toBeGreaterThan(0)
+    const idxs = journal.entries.map((entry) => entry.idx)
+    expect([...idxs].sort((a, b) => a - b)).toEqual(idxs)
+    for (const entry of journal.entries) {
+      const sql = readFileSync(join(root, 'drizzle', `${entry.tag}.sql`), 'utf8')
+      const statements = sql.split('--> statement-breakpoint').map((part) => part.trim()).filter(Boolean)
+      expect(statements.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('adds explicit per-phase boundaries in a follow-up migration', () => {
+    const sql = readFileSync(join(root, 'drizzle', '0001_event_phase_boundaries.sql'), 'utf8')
+    expect(sql).toContain('ADD COLUMN "registration_end"')
+    expect(sql).toContain('ADD COLUMN "judging_start"')
+    expect(sql).toContain('ADD COLUMN "public_voting_start"')
+  })
 })

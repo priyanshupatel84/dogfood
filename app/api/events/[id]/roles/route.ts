@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { assignEventRoleRequestSchema } from '@/src/lib/api/schemas'
 import { assignEventRole, getEffectiveRole, listEventRoles } from '@/src/server/auth-service'
-import { authErrorResponse, parseBody, requireSession } from '@/src/server/http'
+import { authErrorResponse, parseBody, requireSession, routeContext } from '@/src/server/http'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -17,7 +17,7 @@ function serializeRole(row: { id: string; eventId: string; userId: string; role:
   }
 }
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   try {
     const session = await requireSession()
     const { id: eventId } = await params
@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: Params) {
     const rows = await listEventRoles(eventId)
     return NextResponse.json({ eventId, roles: rows.map(serializeRole) })
   } catch (error) {
-    return authErrorResponse(error)
+    return authErrorResponse(error, routeContext(request))
   }
 }
 
@@ -45,6 +45,6 @@ export async function POST(request: Request, { params }: Params) {
     })
     return NextResponse.json(serializeRole(row), { status: 201 })
   } catch (error) {
-    return authErrorResponse(error)
+    return authErrorResponse(error, routeContext(request))
   }
 }

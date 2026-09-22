@@ -2,7 +2,8 @@ import { serialize } from 'cookie'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { z } from 'zod'
-import { AuthError, getSessionUser, type SessionUser } from './auth-service'
+import { AuthError, getSessionUser } from './auth-service'
+import type { SessionUser } from './types'
 
 export const SESSION_COOKIE = 'dogfood_session'
 
@@ -34,12 +35,44 @@ export function jsonError(code: string, status: number): NextResponse {
   return NextResponse.json({ error: code }, { status })
 }
 
-export function authErrorResponse(error: unknown): NextResponse {
-  if (error instanceof AuthError) return jsonError(error.code, error.status)
+export interface AuthLogContext {
+  route: string
+  method: string
+}
+
+// Structured auth failure reporting: one JSON line per rejected request so
+// offline operators can tail server logs and see exactly which route, method,
+// and error code failed. Client responses stay minimal (code only) to avoid
+// leaking internals to the browser.
+export function logAuthEvent(code: string, context: AuthLogContext, detail?: string): void {
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      area: 'auth',
+      code,
+      route: context.route,
+      method: context.method,
+      ...(detail ? { detail } : {}),
+    }),
+  )
+}
+
+export function routeContext(request: Request): AuthLogContext {
+  return { route: new URL(request.url).pathname, method: request.method }
+}
+
+export function authErrorResponse(error: unknown, context?: AuthLogContext): NextResponse {
+  const fallback: AuthLogContext = { route: 'unknown', method: 'unknown' }
+  const ctx = context ?? fallback
+  if (error instanceof AuthError) {
+    logAuthEvent(error.code, ctx)
+    return jsonError(error.code, error.status)
+  }
   if (error instanceof z.ZodError) {
+    logAuthEvent('VALIDATION_ERROR', ctx)
     return NextResponse.json({ error: 'VALIDATION_ERROR', details: error.flatten() }, { status: 400 })
   }
-  console.error('auth route failure', error)
+  logAuthEvent('INTERNAL_ERROR', ctx, error instanceof Error ? error.message : String(error))
   return jsonError('INTERNAL_ERROR', 500)
 }
 

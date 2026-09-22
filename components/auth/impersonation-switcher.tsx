@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ApiError, apiImpersonate } from '@/lib/api-client'
 
 const SEEDED_ACCOUNTS = [
   { email: 'admin@local', label: 'Superadmin' },
@@ -19,18 +20,14 @@ export default function ImpersonationSwitcher({ currentEmail }: { currentEmail: 
     setPending(email)
     setError(null)
     try {
-      const response = await fetch('/api/auth/impersonate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      if (!response.ok) {
-        setError('Switch failed. Is the seed data loaded?')
-        return
-      }
+      await apiImpersonate(email)
       router.refresh()
-    } catch {
-      setError('Switch failed. Is the server running?')
+    } catch (error) {
+      setError(
+        error instanceof ApiError && error.code === 'USER_NOT_FOUND'
+          ? 'Switch failed. Is the seed data loaded?'
+          : 'Switch failed. Is the server running?',
+      )
     } finally {
       setPending(null)
     }

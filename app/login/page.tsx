@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ApiError, apiLogin } from '@/lib/api-client'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -15,20 +16,17 @@ export default function LoginPage() {
     setError(null)
     setPending(true)
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await response.json().catch(() => null)
-      if (!response.ok) {
-        setError(data?.error === 'INVALID_CREDENTIALS' ? 'Wrong email or password.' : 'Login failed. Try again.')
-        return
-      }
+      await apiLogin(email, password)
       router.push('/')
       router.refresh()
-    } catch {
-      setError('Login failed. Is the server running?')
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'INVALID_CREDENTIALS') {
+        setError('Wrong email or password.')
+      } else if (error instanceof ApiError && error.code === 'NETWORK_ERROR') {
+        setError('Login failed. Is the server running?')
+      } else {
+        setError('Login failed. Try again.')
+      }
     } finally {
       setPending(false)
     }

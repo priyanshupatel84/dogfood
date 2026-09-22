@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { impersonateRequestSchema } from '@/src/lib/api/schemas'
 import { createSession, findUserByEmail, isImpersonationEnabled, AuthError } from '@/src/server/auth-service'
-import { authErrorResponse, parseBody, publicUser, withSessionCookie } from '@/src/server/http'
+import { authErrorResponse, parseBody, publicUser, routeContext, withSessionCookie } from '@/src/server/http'
 
 // Offline dev only: mint a session for a seeded user without a password.
 // Disabled in production or when OFFLINE_MODE is not "true".
@@ -18,6 +18,6 @@ export async function POST(request: Request) {
       request,
     )
   } catch (error) {
-    return authErrorResponse(error)
+    return authErrorResponse(error, routeContext(request))
   }
 }
