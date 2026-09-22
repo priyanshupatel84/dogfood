@@ -1,494 +1,155 @@
-# Dogfood 2026: Project Setup & API-First Architecture Guide (Next.js)
-
-This document provides a complete, step-by-step blueprint to initialize and build the **Dogfood 2026** platform using **Next.js (App Router)**, **PostgreSQL**, **Drizzle ORM**, **Argon2id**, **MinIO**, **Zod**, **OpenAPI 3.0**, and **Vitest**.
-
----
-
-## 1. Technical Requirements & Stack Selection
-
-To ensure the application runs 100% offline via `docker compose up` while remaining scalable and production-ready, the stack is carefully selected without cloud dependencies:
-
-| Layer | Technology Choice | Justification |
-| :--- | :--- | :--- |
-| **Framework** | Next.js 14+ (App Router) | Server Components, Route Handlers (`src/app/api`), and built-in API routing. |
-| **Database** | PostgreSQL 16 | Native Full-Text Search (`tsvector`), Trigram fuzzy matching (`pg_trgm`), JSONB, and atomic transaction locks. |
-| **ORM & Migrations** | Drizzle ORM | Zero-overhead, lightweight SQL query builder with type-safe schema definitions and local migration tools. |
-| **Authentication** | Argon2id + Opaque DB Sessions | `argon2` for password hashing, stored as HttpOnly encrypted session cookies. |
-| **File Storage** | MinIO (Containerized S3) | Amazon S3 API compatible local binary object storage for images, videos, and zip files. |
-| **Validation & OpenAPI** | Zod + `@asteasolutions/zod-to-openapi` | Code-first API specification generator ensuring 100% contract alignment between docs and routes. |
-| **Testing** | Vitest + Supertest | Rapid unit and integration testing against local PostgreSQL containers without network calls. |
-
----
-
-## 2. Directory & File Structure
-
-Here is the modular file structure separating business logic, database migrations, API definitions, local CLI tools, and automated acceptance tests:
-
-```
-dogfood-platform/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── docker/
-│   ├── entrypoint.sh
-│   └── minio-init.sh
-├── docs/
-│   ├── openapi.json
-│   └── THREAT-MODEL.md
-├── scripts/
-│   ├── seed.ts
-│   └── cli.ts
-├── src/
-│   ├── app/
-│   │   ├── (auth)/
-│   │   │   ├── login/
-│   │   │   └── register/
-│   │   ├── (dashboard)/
-│   │   │   ├── admin/
-│   │   │   ├── judge/
-│   │   │   └── participant/
-│   │   ├── api/
-│   │   │   ├── v1/
-│   │   │   │   ├── auth/
-│   │   │   │   │   ├── login/route.ts
-│   │   │   │   │   └── logout/route.ts
-│   │   │   │   ├── events/route.ts
-│   │   │   │   ├── teams/route.ts
-│   │   │   │   └── submissions/route.ts
-│   │   │   └── docs/route.ts
-│   │   ├── gallery/
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   ├── db/
-│   │   ├── migrations/
-│   │   ├── schema/
-│   │   │   ├── auth.ts
-│   │   │   ├── events.ts
-│   │   │   ├── teams.ts
-│   │   │   └── submissions.ts
-│   │   ├── index.ts
-│   │   └── seed-data.ts
-│   ├── lib/
-│   │   ├── api/
-│   │   │   ├── openapi-generator.ts
-│   │   │   └── response.ts
-│   │   ├── auth/
-│   │   │   ├── argon2.ts
-│   │   │   ├── rbac.ts
-│   │   │   └── session.ts
-│   │   ├── storage/
-│   │   │   └── minio.ts
-│   │   └── utils/
-│   └── middleware.ts
-├── tests/
-│   ├── setup.ts
-│   ├── integration/
-│   │   ├── auth.test.ts
-│   │   ├── deadline.test.ts
-│   │   └── teams.test.ts
-│   └── unit/
-│       └── rbac.test.ts
-├── .env.example
-├── docker-compose.yml
-├── Dockerfile
-├── drizzle.config.ts
-├── next.config.mjs
-├── package.json
-├── tsconfig.json
-└── vitest.config.ts
-```
-
-### Generation Script (Bash Command)
+# Dogfood 2026: T1 - Core Architecture Deep Dive
 
-Run this single command in your terminal to instantly create the complete directory structure:
+The T1 tier represents the fundamental operational skeleton of the hackathon platform. The primary constraint is that it must boot via a single `docker-compose up` command, operate completely offline, and remain robust against role manipulation, deadline bypasses, and system clock attacks.
 
-```bash
-mkdir -p .github/workflows docker docs scripts \
-  src/app/\(auth\)/login src/app/\(auth\)/register \
-  src/app/\(dashboard\)/admin src/app/\(dashboard\)/judge src/app/\(dashboard\)/participant \
-  src/app/api/v1/auth/login src/app/api/v1/auth/logout \
-  src/app/api/v1/events src/app/api/v1/teams src/app/api/v1/submissions \
-  src/app/api/docs src/app/gallery \
-  src/db/migrations src/db/schema \
-  src/lib/api src/lib/auth src/lib/storage src/lib/utils \
-  tests/integration tests/unit
-```
-
----
-
-## 3. Step-by-Step Project Setup Guide
-
-### Step 1: Initialize Next.js & Install Dependencies
-
-Run the initialization command in your target directory:
-
-```bash
-npx create-next-app@latest . \
-  --typescript \
-  --tailwind \
-  --eslint \
-  --app \
-  --src-dir \
-  --import-alias "@/*" \
-  --use-npm
-```
-
-Install core runtime dependencies:
-
-```bash
-npm install drizzle-orm postgres argon2 @aws-sdk/client-s3 @aws-sdk/s3-request-presigner zod @asteasolutions/zod-to-openapi cookie lucide-react
-```
-
-Install development and testing dependencies:
-
-```bash
-npm install -D drizzle-kit vitest supertest @types/supertest @types/argon2 @types/cookie dotenv tsx
-```
+## 1. Authentication, Authorization & Role Hierarchy
 
----
+### Offline-First Authentication Pipeline
 
-### Step 2: Configure Environment Variables
+To operate without cloud identity providers, the platform relies on a self-hosted credential engine:
 
-Create `.env.example` (and clone to `.env`):
+* **Storage & Hashing:** User passwords are hashed securely using **Argon2id** (`memory=64MB, iterations=3, parallelism=4`).
 
-```env
-# Application
-NODE_ENV=development
-PORT=3000
-APP_URL=http://localhost:3000
-OFFLINE_MODE=true
-
-# Database
-DATABASE_URL=postgres://dogfood:dogfood_pass@localhost:5432/dogfood_db
-
-# Local Object Storage (MinIO)
-MINIO_ENDPOINT=localhost
-MINIO_PORT=9000
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
-MINIO_BUCKET_NAME=dogfood-assets
-MINIO_USE_SSL=false
-
-# Session Security
-SESSION_SECRET=super-secret-random-32-character-string-here
-```
-
----
-
-### Step 3: OpenAPI-First Contract Setup
-
-To meet the **API-First (+3 Bonus)** requirement, we define routes using **Zod schemas** that generate both runtime request validators and the `openapi.json` spec.
-
-#### `src/lib/api/openapi-generator.ts`
-
-```typescript
-import { OpenAPIRegistry, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
-import { z } from 'zod';
-
-export const registry = new OpenAPIRegistry();
+* **Session Management:** Opaque session tokens (cryptographically secure random strings) are stored in PostgreSQL/Redis. The client receives this token as an `HttpOnly`, `Secure`, `SameSite=Lax` cookie.
 
-// Register Authentication Schemas
-export const LoginSchema = registry.register(
-  'LoginRequest',
-  z.object({
-    email: z.string().email().openapi({ example: 'admin@local' }),
-    password: z.string().min(8).openapi({ example: 'AdminPass123!' }),
-  })
-);
-
-export const UserResponseSchema = registry.register(
-  'UserResponse',
-  z.object({
-    id: z.string().uuid(),
-    email: z.string().email(),
-    role: z.enum(['SUPERADMIN', 'ORGANIZER', 'JUDGE', 'PARTICIPANT']),
-  })
-);
-
-// Define OpenAPI Document Generator Function
-export function generateOpenAPISpec() {
-  const generator = new OpenApiGeneratorV3(registry.definitions);
-
-  return generator.generateDocument({
-    openapi: '3.0.0',
-    info: {
-      version: '1.0.0',
-      title: 'Dogfood Hackathon Platform API',
-      description: 'Fully self-hostable, offline-first hackathon platform specification.',
-    },
-    servers: [{ url: '/api/v1' }],
-  });
-}
-```
-
-#### `src/app/api/docs/route.ts`
-
-Serve the generated OpenAPI document directly from Next.js:
-
-```typescript
-import { NextResponse } from 'next/server';
-import { generateOpenAPISpec } from '@/lib/api/openapi-generator';
-
-export async function GET() {
-  const spec = generateOpenAPISpec();
-  return NextResponse.json(spec);
-}
-```
-
----
-
-### Step 4: Configure Database & Drizzle Schema
-
-#### `src/db/schema/auth.ts`
-
-```typescript
-import { pgTable, uuid, text, timestamp, pgEnum } from 'drizzle-orm/pg-core';
-
-export const roleEnum = pgEnum('role', ['SUPERADMIN', 'ORGANIZER', 'JUDGE', 'PARTICIPANT']);
-
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  role: roleEnum('role').default('PARTICIPANT').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-
-export const sessions = pgTable('sessions', {
-  id: text('id').primaryKey(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-```
-
-#### `drizzle.config.ts`
-
-```typescript
-import { defineConfig } from 'drizzle-kit';
-
-export default defineConfig({
-  schema: './src/db/schema/*',
-  out: './src/db/migrations',
-  dialect: 'postgresql',
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
-  },
-});
-```
-
----
-
-### Step 5: Implement `dogfood-cli` Tooling
-
-Create a standalone CLI tool in `scripts/cli.ts` to support offline user management and impersonation testing.
-
-#### `scripts/cli.ts`
-
-```typescript
-import { db } from '../src/db';
-import { users } from '../src/db/schema/auth';
-import { hashPassword } from '../src/lib/auth/argon2';
-
-async function main() {
-  const command = process.argv[2];
-
-  if (command === 'create-user') {
-    const email = process.argv[3];
-    const password = process.argv[4] || 'Password123!';
-    const role = (process.argv[5] || 'PARTICIPANT') as any;
-
-    if (!email) {
-      console.error('Usage: npm run cli create-user <email> [password] [role]');
-      process.exit(1);
-    }
-
-    const hashedPassword = await hashPassword(password);
-    const [user] = await db.insert(users).values({
-      email,
-      passwordHash: hashedPassword,
-      role,
-    }).returning();
-
-    console.log(`Successfully created user: ${user.email} (${user.role}) with ID: ${user.id}`);
-  } else {
-    console.log('Available commands: create-user');
-  }
-  process.exit(0);
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-```
-
-Add script execution to `package.json`:
-
-```json
-"scripts": {
-  "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "db:generate": "drizzle-kit generate",
-  "db:migrate": "drizzle-kit migrate",
-  "db:seed": "tsx scripts/seed.ts",
-  "cli": "tsx scripts/cli.ts",
-  "test": "vitest run"
-}
-```
-
----
-
-### Step 6: Single-Command Local Setup (`docker-compose.yml`)
-
-The platform **must** start seamlessly offline using `docker compose up`.
-
-#### `docker-compose.yml`
-
-```yaml
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: dogfood_postgres
-    environment:
-      POSTGRES_USER: dogfood
-      POSTGRES_PASSWORD: dogfood_pass
-      POSTGRES_DB: dogfood_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dogfood -d dogfood_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  minio:
-    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
-    container_name: dogfood_minio
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: dogfood_app
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgres://dogfood:dogfood_pass@postgres:5432/dogfood_db
-      - MINIO_ENDPOINT=minio
-      - MINIO_PORT=9000
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-      - MINIO_BUCKET_NAME=dogfood-assets
-      - OFFLINE_MODE=true
-      - SESSION_SECRET=docker-container-super-secret-key-32chars
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-
-volumes:
-  postgres_data:
-  minio_data:
-```
-
----
-
-### Step 7: Testing Configuration (Vitest Integration)
-
-Set up automated testing for offline acceptance and deadline checks.
-
-#### `vitest.config.ts`
-
-```typescript
-import { defineConfig } from 'vitest/config';
-import path from 'path';
-
-export default defineConfig({
-  test: {
-    environment: 'node',
-    globals: true,
-    setupFiles: ['./tests/setup.ts'],
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-});
-```
-
-#### `tests/integration/deadline.test.ts`
-
-```typescript
-import { describe, it, expect, vi } from 'vitest';
-
-describe('Submission Pipeline - Deadline Enforcement', () => {
-  it('should reject submission PATCH request when server clock exceeds deadline', async () => {
-    const submissionDeadline = new Date('2026-09-20T12:00:00Z');
-    
-    // Fast forward system time past the deadline
-    vi.setSystemTime(new Date('2026-09-20T12:01:00Z'));
-
-    const isExpired = new Date() > submissionDeadline;
-
-    expect(isExpired).toBe(true);
-    // Simulating API response expectation
-    const apiStatus = isExpired ? 403 : 200;
-    expect(apiStatus).toBe(403);
-
-    vi.useRealTimers();
-  });
-});
-```
-
----
-
-## 4. Verification Workflow
-
-To verify your environment setup:
-
-1. **Boot local services:**
-   ```bash
-   docker compose up -d postgres minio
-   ```
-2. **Apply migrations & seed data:**
-   ```bash
-   npm run db:generate
-   npm run db:migrate
-   npm run db:seed
-   ```
-3. **Run local CLI to create an admin:**
-   ```bash
-   npm run cli create-user admin@local AdminPass123! SUPERADMIN
-   ```
-4. **Execute Test Suite:**
-   ```bash
-   npm run test
-   ```
-5. **Full Container Stack Verification:**
-   ```bash
-   docker compose up --build
-   ```
-   Navigate to `http://localhost:3000/api/docs` to view the live generated OpenAPI specification.
+* **Zero-Trust Boundary:** JWTs are intentionally avoided for core sessions to ensure instant session revocation (e.g., if an Admin kicks an abusive user, their access drops immediately without waiting for a token expiry).
+
+### Contextual Role Hierarchy
+
+Permissions are isolated using an **Event-Contextual RBAC (Role-Based Access Control)** system. A user's role is not a global flag (except for instance Superadmins), but mapped to an `event_id`:
+
+1. **SUPERADMIN:** Global instance owner. Creates events, manages infrastructure settings.
+
+2. **ORGANIZER:** Maps to a specific event. Can configure dates, tracks, rubrics, and trigger phase changes.
+
+3. **JUDGE:** Maps to a specific event. Can only view and evaluate submissions assigned to them.
+
+4. **PARTICIPANT:** Base level. Can join/create teams and draft submissions.
+
+### Offline Dev/Test CLI
+
+Because email verification is impossible in a purely offline air-gapped environment, the platform includes a seeded environment setup:
+
+* **The `dogfood-cli`:** A local CLI script inside the backend container.
+
+  * `docker compose exec backend ./cli create-user --role=admin --email=admin@local`
+
+* **Local Auth Switcher:** When `NODE_ENV=development` AND `OFFLINE_MODE=true` are detected in the `.env`, a frontend floating "Impersonation UI" appears. This allows a developer to instantly switch between a seeded Organizer, Judge, or Participant context with one click, bypassing the password requirement entirely for local testing.
+
+### Supplementary Online Features (Production)
+
+* **OAuth2 / OIDC Integrations:** In production, GitHub and Google OAuth2 should be enabled for 1-click registration.
+
+* **Passkeys (WebAuthn):** Judges and Organizers can use FaceID/TouchID/Hardware Keys to authenticate securely without passwords.
+
+* **Transactional Emails:** Integration with Postmark/SendGrid for password reset flows and login alerts.
+
+## 2. Event Configuration & Lifecycle State Machine
+
+### The State Machine
+
+Hackathons are strictly time-bound. Instead of relying on manual toggles, the system uses a temporal state machine evaluated at the backend database boundary.
+The Event model contains strict timestamps: `registration_start`, `submission_start`, `submission_end`, `judging_start`, `voting_end`.
+
+* State transitions implicitly based on the server clock (`NOW()`):
+  `DRAFT` → `REGISTRATION` → `SUBMISSION` → `JUDGING` → `PUBLIC_VOTING` → `PUBLISHED`
+
+### Tracks & Prize Allocation
+
+* **Dynamic Tracks:** Organizers can define multiple tracks (e.g., "Best Use of Local LLMs", "FinTech Track").
+
+* **Immutable Prize Integrity:** To prevent organizer abuse or bait-and-switch tactics, the application enforces a strict rule: **Once an event state > `DRAFT`, prize values can only be increased, never decreased or removed.** This is enforced via a PostgreSQL trigger (`BEFORE UPDATE ON prizes`) that throws a constraint error if `new.amount < old.amount`.
+
+* **Custom Eligibility Constraints:** Tracks contain a JSONB `eligibility_rules` payload. For example: `{"max_team_size": 2, "student_only": true, "required_tech": ["postgres"]}`. The submission API validates the team's metadata against this JSONB object before accepting the submission into the track.
+
+## 3. Team Formation Engine
+
+### Roster Management & State Locking
+
+* **Roster Constraints:** Teams enforce a strict 1-4 member limit at the database level.
+
+* **Roles:** Each team has 1 `LEADER` (who can kick members, transfer ownership, or delete the team) and `MEMBER`s.
+
+* **State Locking:** The roster must freeze to prevent cheating. A team becomes locked (preventing joins/leaves/kicks) when:
+
+  1. The project state changes from `DRAFT` to `SUBMITTED`.
+
+  2. The global `submission_end` timestamp is passed.
+
+### Offline Invite Tokens vs. Online Links
+
+* **Fully-Offline Tokens (Air-gapped):** The backend generates a short, cryptographically secure alphanumeric token (e.g., `HR-8X2F-3J9`) stored hashed in the DB with a TTL (Time-to-Live). The leader copies this text. The invited member manually pastes this token into an "Enter Invite Code" UI.
+
+* **Online Invite Links:** A URL format: `http://localhost:3000/invite?token=HR-8X2F-3J9`. When a user clicks this link, the frontend reads the query parameter and POSTs it to the join API.
+
+* **Supplementary Online Features (Production):** The platform can dispatch SMTP emails directly to a user's inbox containing the magic join link.
+
+## 4. Submission Pipeline
+
+### Draft, Auto-Save, and Edit Workflow
+
+* **Background Sync:** Submissions are created in a `DRAFT` state the moment a team is formed. As the user types, the frontend debounces input (e.g., 2 seconds of inactivity) and sends `PATCH` requests to the API.
+
+* **Conflict Resolution:** To prevent two teammates from overwriting each other, the payload includes a `last_updated_at` timestamp. If the server detects a newer timestamp in the DB than what the client sent, it returns a `409 Conflict` to trigger a frontend refresh.
+
+### Metadata Handling
+
+* **Core Fields:** Title, Tagline (max 140 chars), Description (Markdown), Tech Stack (Array of strings).
+
+* **Repository & Demo Links:** Must pass strict URI format validation (`^https?://`).
+
+* **Containerized MinIO (Offline Storage):** For offline asset storage (logos, demo videos), the `docker-compose.yml` includes a **MinIO** container.
+
+  1. Client requests an upload slot.
+
+  2. Backend generates a MinIO Presigned URL.
+
+  3. Client uploads binary data directly to MinIO.
+
+  4. Client PATCHes the submission with the returned MinIO object path (`/submissions/assets/logo.png`).
+
+### Server-Side Deadline Enforcement
+
+Deadlines are **never** trusted from the client.
+
+* **Middleware Interception:** A dedicated API middleware (`RequirePhase(SUBMISSION)`) intercepts all `POST`/`PATCH` requests to submission endpoints.
+
+* It fetches the current server timestamp. If `NOW() > event.submission_end`, it immediately aborts with a `403 Forbidden: Submission deadline exceeded`.
+
+### Supplementary Online Features (Production)
+
+* **Cloud Storage Migration:** Seamlessly swapping MinIO out for AWS S3 / Cloudflare R2 by simply changing `.env` variables (`S3_ENDPOINT`).
+
+* **Automated Link Verification:** Webhooks ping the submitted GitHub repository URL to ensure it is public and returns a `200 OK`.
+
+## 5. Public Gallery & Visibility Engine
+
+### Content & Scope
+
+The gallery is the public face of the event.
+
+* **Scope:** It is primarily **Event-wise** (e.g., `/events/dogfood-2026/gallery`), allowing scoped viewing of entries specific to one hackathon. However, a **Global Gallery** (`/explore`) exists to aggregate submissions across *all* past and present public events on the platform instance.
+
+### Search Functionality (Offline)
+
+Without external dependencies like Algolia, search is powered natively by PostgreSQL:
+
+* **Full-Text Search (FTS):** A `tsvector` column indexes the `title`, `tagline`, and `description`. Queries are executed using `tsquery` to support stemming and ranking (e.g., searching "running" matches "run").
+
+* **Fuzzy Tag Matching:** `pg_trgm` (Trigram extension) is used to power the tech-stack filtering, allowing typo-tolerance (e.g., searching "javscript" matches "javascript").
+
+### Visibility Engine (Data Scoping)
+
+Visibility is strictly enforced at the database query layer to prevent data leakage. A project is only returned to an unauthenticated/public user if it meets ALL the following criteria:
+
+1. `submission.status = 'SUBMITTED'` (Drafts are excluded).
+
+2. `submission.is_hidden = FALSE` (Organizers can manually hide abusive/spam projects).
+
+3. `event.phase >= JUDGING` (Submissions are blind to the public until the submission deadline passes to prevent idea-stealing).
+
+### Supplementary Online Features (Production)
+
+* **Algolia / Meilisearch Integration:** Syncing the Postgres submission table to an external search index via webhooks for sub-millisecond, highly typo-tolerant search across millions of historical hackathon records.
+
+* **CDN Caching:** Edges caching (Cloudflare) for the gallery API endpoints to handle massive traffic spikes during the public voting phase.

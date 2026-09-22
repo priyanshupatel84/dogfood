@@ -8,11 +8,12 @@
     "build": "next build",
     "start": "next start",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "seed": "tsx scripts/seed.ts",
     "test": "vitest run",
     "cli": "tsx scripts/cli.ts",
+    "openapi": "tsx scripts/generate-openapi.ts",
     "acceptance": "vitest run && tsx scripts/run-acceptance.ts"
   },
   "dependencies": {
