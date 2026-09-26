@@ -136,10 +136,9 @@ export async function POST(request: Request) {
       .where(
         and(
           eq(rubrics.eventId, eventId),
-          eq(rubrics.id, rubrics.id),
+          eq(rubrics.trackId, assignment.submissionTrackId),
         ),
       )
-      .innerJoin(tracks, and(eq(rubrics.eventId, tracks.eventId), eq(tracks.id, assignment.submissionTrackId)))
       .limit(1)
 
     let selectedRubric = trackRubric?.rubric
