@@ -99,6 +99,10 @@
                       "type": "string",
                       "maxLength": 254
                     },
+                    "name": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "role": {
                       "type": "string",
                       "enum": [
@@ -119,6 +123,7 @@
                   "required": [
                     "id",
                     "email",
+                    "name",
                     "role",
                     "organization",
                     "createdAt"
@@ -202,6 +207,10 @@
                           "type": "string",
                           "maxLength": 254
                         },
+                        "name": {
+                          "type": "string",
+                          "nullable": true
+                        },
                         "role": {
                           "type": "string",
                           "enum": [
@@ -222,6 +231,7 @@
                       "required": [
                         "id",
                         "email",
+                        "name",
                         "role",
                         "organization",
                         "createdAt"
@@ -364,6 +374,10 @@
                           "type": "string",
                           "maxLength": 254
                         },
+                        "name": {
+                          "type": "string",
+                          "nullable": true
+                        },
                         "role": {
                           "type": "string",
                           "enum": [
@@ -384,6 +398,7 @@
                       "required": [
                         "id",
                         "email",
+                        "name",
                         "role",
                         "organization",
                         "createdAt"
@@ -455,6 +470,10 @@
                           "type": "string",
                           "maxLength": 254
                         },
+                        "name": {
+                          "type": "string",
+                          "nullable": true
+                        },
                         "role": {
                           "type": "string",
                           "enum": [
@@ -475,6 +494,7 @@
                       "required": [
                         "id",
                         "email",
+                        "name",
                         "role",
                         "organization",
                         "createdAt"

@@ -40,6 +40,9 @@ const createdAt = () =>
 export const users = pgTable("users", {
   id: id(),
   email: text("email").notNull().unique(),
+  // Display name (e.g. fixture judges carry names; team members may be
+  // email-only). Nullable because credentials, not identity, gate access.
+  name: text("name"),
   passwordHash: text("password_hash").notNull(),
   role: roleEnum("role").notNull().default("PARTICIPANT"),
   organization: text("organization"),
@@ -121,7 +124,9 @@ export const teamMembers = pgTable("team_members", {
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: memberRoleEnum("role").notNull().default("MEMBER"),
-    joinedAt: createdAt(),
+    // Column name is explicit: the shared createdAt() helper hardcodes
+    // "created_at", but this table's migration column is "joined_at".
+    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({ teamMemberUnique: uniqueIndex("team_member_unique").on(t.teamId, t.userId) }),
 );
@@ -159,6 +164,24 @@ export const rubrics = pgTable("rubrics", {
     .$type<Array<{ id: string; label: string; weight: number }>>()
     .notNull(),
 });
+// Judge track expertise (fixture judges declare tracks[] they can review).
+// Distinct from judge_assignments, which maps a judge to a specific
+// submission: this table records which tracks a judge is qualified for.
+export const judgeTracks = pgTable(
+  "judge_tracks",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    judgeId: uuid("judge_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => ({
+    judgeTrackUnique: uniqueIndex("judge_track_unique").on(t.judgeId, t.trackId),
+  }),
+);
 export const judgeAssignments = pgTable("judge_assignments", {
     id: id(),
     eventId: uuid("event_id")
@@ -189,6 +212,8 @@ export const scores = pgTable("scores", {
     .$type<Record<string, number>>()
     .notNull(),
   rawTotal: real("raw_total").notNull(),
+  // Judge's written remark (blank fixture comments load as NULL).
+  comment: text("comment"),
   submittedAt: timestamp("submitted_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -292,6 +317,7 @@ export const allTables = {
   teamMembers,
   submissions,
   rubrics,
+  judgeTracks,
   judgeAssignments,
   scores,
   pairwiseComparisons,

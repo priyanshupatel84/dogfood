@@ -40,6 +40,7 @@ export const assignEventRoleRequestSchema = z.object({
 export const userResponseSchema = z.object({
   id: uuidSchema,
   email: emailSchema,
+  name: z.string().nullable(),
   role: roleSchema,
   organization: z.string().nullable(),
   createdAt: z.string(),

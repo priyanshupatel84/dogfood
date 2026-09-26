@@ -33,13 +33,18 @@ export const viewport: Viewport = {
   ],
 }
 
+const themeInitScript = `(function(){try{var t=localStorage.getItem('dogfood-theme');if(t==='light'||t==='dark'){document.documentElement.classList.add(t);}}catch(e){}})();`
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
