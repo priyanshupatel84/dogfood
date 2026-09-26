@@ -55,7 +55,8 @@ services:
     build: .
     # Migrate first: on a fresh volume no tables exist yet, and the app waits
     # on this service, so the app entrypoint migration alone would never run.
-    command: ["sh", "-c", "npm run db:migrate && npm run db:seed"]
+    # Fixtures load last and skip when the sample event already exists.
+    command: ["sh", "-c", "npm run db:migrate && npm run db:seed && npm run db:fixtures"]
     depends_on:
       postgres:
         condition: service_healthy

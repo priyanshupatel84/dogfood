@@ -97,10 +97,11 @@ export function withClearedSession(response: NextResponse): NextResponse {
   return response
 }
 
-export function publicUser(user: { id: string; email: string; role: string; organization: string | null; createdAt: Date }) {
+export function publicUser(user: { id: string; email: string; name: string | null; role: string; organization: string | null; createdAt: Date }) {
   return {
     id: user.id,
     email: user.email,
+    name: user.name,
     role: user.role,
     organization: user.organization,
     createdAt: user.createdAt.toISOString(),

@@ -27,9 +27,33 @@ describe('single-command startup (docker compose up)', () => {
     expect(compose).not.toMatch(/npm run (test|acceptance)/)
   })
 
+  it('only references npm scripts that exist, so boot cannot exit 1 on a missing script', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    const referenced = new Set(
+      [...compose.matchAll(/npm run ([A-Za-z0-9:_-]+)/g)].map((match) => match[1]),
+    )
+    expect(referenced.size).toBeGreaterThan(0)
+    for (const name of referenced) {
+      expect(
+        Object.hasOwn(pkg.scripts, name),
+        `docker-compose.yml runs "npm run ${name}" but package.json has no such script`,
+      ).toBe(true)
+    }
+  })
+
   it('seeds automatically once postgres and seaweedfs are healthy', () => {
     expect(compose).toMatch(/seed:\n\s+build: \./)
     expect(compose).toMatch(/npm run db:seed/)
+  })
+
+  it('loads fixtures after seeding so boot order is migrate, seed, fixtures', () => {
+    const seedBlock = compose.slice(compose.indexOf('\n  seed:'))
+    const seedAt = seedBlock.indexOf('db:seed')
+    const fixturesAt = seedBlock.indexOf('db:fixtures')
+    expect(fixturesAt).toBeGreaterThan(seedAt)
+    expect(seedBlock).toMatch(/db:fixtures/)
   })
 
   it('runs boot migrations without the version-gated drizzle-kit CLI', () => {
