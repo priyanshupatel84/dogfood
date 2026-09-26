@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { getEffectiveRole } from '@/src/server/auth-service'
 import { authErrorResponse, parseBody, requireSession, routeContext } from '@/src/server/http'
 import { db } from '@/src/db'
-import { rubrics, tracks } from '@/src/db/schema'
+import { rubrics, tracks, type NewRubric } from '@/src/db/schema'
 import { validateRubricCriteriaStrict, RubricValidationError } from '@/src/server/judging/rubric-service'
 
 const rubricCriterionSchema = z.object({
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
         .returning()
       result = updated
     } else {
-      const insertValues: Record<string, unknown> = {
+      const insertValues: NewRubric = {
         eventId,
         title,
         criteriaJson: criteria,

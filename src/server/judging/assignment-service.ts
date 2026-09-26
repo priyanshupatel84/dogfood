@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import {
   auditLogs,
@@ -170,7 +170,7 @@ export async function assignProjectsToJudges(input: BatchAssignInput): Promise<B
       .where(
         and(
           eq(tracks.eventId, eventId),
-          submissions.id.in(sortedIds),
+          inArray(submissions.id, sortedIds),
         ),
       )
       .orderBy(submissions.id);
@@ -186,7 +186,7 @@ export async function assignProjectsToJudges(input: BatchAssignInput): Promise<B
   const allJudgeRoles = await db
     .select({ userId: eventRoles.userId, role: eventRoles.role })
     .from(eventRoles)
-    .where(and(eq(eventRoles.eventId, eventId), eventRoles.role.in(["JUDGE", "ORGANIZER"] as const)));
+    .where(and(eq(eventRoles.eventId, eventId), inArray(eventRoles.role, ["JUDGE", "ORGANIZER"] as const)));
 
   const superadminIds = (await db.select({ id: users.id }).from(users).where(eq(users.role, "SUPERADMIN"))).map((u) => u.id);
   const roleJudgeIds = allJudgeRoles.map((r) => r.userId);
