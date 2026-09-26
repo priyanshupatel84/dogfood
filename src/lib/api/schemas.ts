@@ -13,6 +13,50 @@ export const uuidSchema = z.string().uuid()
 export const roleSchema = z.enum(['SUPERADMIN', 'ORGANIZER', 'JUDGE', 'PARTICIPANT'])
 export const eventRoleSchema = z.enum(['ORGANIZER', 'JUDGE', 'PARTICIPANT'])
 
+// Judging primitives ----------------------------------------------------------
+
+export const uuid = z.string().uuid()
+export const criterionScores = z.record(z.string(), z.number().finite().gte(0).lte(100))
+
+export const scoreSubmissionSchema = z.object({
+  assignmentId: uuid,
+  eventId: uuid,
+  criterionScores,
+  comment: z.string().optional(),
+})
+
+export const assignmentCreateSchema = z.object({
+  eventId: uuid,
+  judgeId: uuid,
+  submissionId: uuid,
+})
+
+export const batchAssignSchema = z.object({
+  eventId: uuid,
+  submissionIds: z.array(uuid).optional(),
+  judgesPerSubmission: z.number().int().positive().default(2),
+})
+
+export const rubricCriterionUpsert = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  weight: z.number().gte(0),
+})
+
+export const rubricUpsertSchema = z.object({
+  eventId: uuid,
+  trackId: uuid.nullish(),
+  title: z.string().min(1),
+  criteria: z.array(rubricCriterionUpsert).min(1).refine((arr) => {
+    const seen = new Set<string>()
+    for (const c of arr) {
+      if (seen.has(c.id)) return false
+      seen.add(c.id)
+    }
+    return true
+  }, 'Criterion ids must be unique'),
+})
+
 // Requests --------------------------------------------------------------------
 
 export const registerRequestSchema = z.object({

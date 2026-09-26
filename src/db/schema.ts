@@ -12,6 +12,10 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 
+export const assignmentStatusEnum = ["PENDING", "COMPLETED"] as const;
+export function isAssignmentStatus(s: unknown): s is (typeof assignmentStatusEnum)[number] {
+  return typeof s === "string" && assignmentStatusEnum.includes(s as (typeof assignmentStatusEnum)[number]);
+}
 export const roleEnum = pgEnum("role", [
   "SUPERADMIN",
   "ORGANIZER",
@@ -50,13 +54,13 @@ export const users = pgTable("users", {
 });
 
 export const sessions = pgTable("sessions", {
-    id: text("id").primaryKey(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: createdAt(),
-  },
+  id: text("id").primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+},
   (t) => ({ sessionsUserIdx: index("sessions_user_idx").on(t.userId) }),
 );
 
@@ -116,42 +120,42 @@ export const teams = pgTable("teams", {
   createdAt: createdAt(),
 });
 export const teamMembers = pgTable("team_members", {
-    id: id(),
-    teamId: uuid("team_id")
-      .notNull()
-      .references(() => teams.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    role: memberRoleEnum("role").notNull().default("MEMBER"),
-    // Column name is explicit: the shared createdAt() helper hardcodes
-    // "created_at", but this table's migration column is "joined_at".
-    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
-  },
+  id: id(),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  role: memberRoleEnum("role").notNull().default("MEMBER"),
+  // Column name is explicit: the shared createdAt() helper hardcodes
+  // "created_at", but this table's migration column is "joined_at".
+  joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+},
   (t) => ({ teamMemberUnique: uniqueIndex("team_member_unique").on(t.teamId, t.userId) }),
 );
 export const submissions = pgTable("submissions", {
-    id: id(),
-    teamId: uuid("team_id")
-      .notNull()
-      .references(() => teams.id, { onDelete: "cascade" }),
-    trackId: uuid("track_id")
-      .notNull()
-      .references(() => tracks.id),
-    title: text("title").notNull().default("Untitled project"),
-    tagline: text("tagline"),
-    description: text("description"),
-    techStack: jsonb("tech_stack").$type<string[]>().default([]),
-    repoUrl: text("repo_url"),
-    demoUrl: text("demo_url"),
-    assetKeys: jsonb("asset_keys").$type<string[]>().default([]),
-    isDraft: boolean("is_draft").notNull().default(true),
-    isHidden: boolean("is_hidden").notNull().default(false),
-    submittedAt: timestamp("submitted_at", { withTimezone: true }),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
+  id: id(),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id, { onDelete: "cascade" }),
+  trackId: uuid("track_id")
+    .notNull()
+    .references(() => tracks.id),
+  title: text("title").notNull().default("Untitled project"),
+  tagline: text("tagline"),
+  description: text("description"),
+  techStack: jsonb("tech_stack").$type<string[]>().default([]),
+  repoUrl: text("repo_url"),
+  demoUrl: text("demo_url"),
+  assetKeys: jsonb("asset_keys").$type<string[]>().default([]),
+  isDraft: boolean("is_draft").notNull().default(true),
+  isHidden: boolean("is_hidden").notNull().default(false),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+},
   (t) => ({ submissionsTeamIdx: index("submissions_team_idx").on(t.teamId) }),
 );
 export const rubrics = pgTable("rubrics", {
@@ -159,6 +163,7 @@ export const rubrics = pgTable("rubrics", {
   eventId: uuid("event_id")
     .notNull()
     .references(() => events.id, { onDelete: "cascade" }),
+  trackId: uuid("track_id").references(() => tracks.id),
   title: text("title").notNull(),
   criteriaJson: jsonb("criteria_json")
     .$type<Array<{ id: string; label: string; weight: number }>>()
@@ -183,18 +188,18 @@ export const judgeTracks = pgTable(
   }),
 );
 export const judgeAssignments = pgTable("judge_assignments", {
-    id: id(),
-    eventId: uuid("event_id")
-      .notNull()
-      .references(() => events.id, { onDelete: "cascade" }),
-    judgeId: uuid("judge_id")
-      .notNull()
-      .references(() => users.id),
-    submissionId: uuid("submission_id")
-      .notNull()
-      .references(() => submissions.id, { onDelete: "cascade" }),
-    status: text("status").notNull().default("PENDING"),
-  },
+  id: id(),
+  eventId: uuid("event_id")
+    .notNull()
+    .references(() => events.id, { onDelete: "cascade" }),
+  judgeId: uuid("judge_id")
+    .notNull()
+    .references(() => users.id),
+  submissionId: uuid("submission_id")
+    .notNull()
+    .references(() => submissions.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("PENDING"),
+},
   (t) => ({ judgeSubmissionUnique: uniqueIndex("judge_submission_unique").on(t.judgeId, t.submissionId) }),
 );
 export const scores = pgTable("scores", {
@@ -217,7 +222,26 @@ export const scores = pgTable("scores", {
   submittedAt: timestamp("submitted_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+},
+  (t) => ({ scoresAssignmentUnique: uniqueIndex("scores_assignment_unique").on(t.assignmentId) }),
+);
+export const normalizedScores = pgTable(
+  "normalized_scores",
+  {
+    id: id(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => submissions.id, { onDelete: "cascade" }),
+    normalizedTotal: real("normalized_total").notNull(),
+    calculatedAt: timestamp("calculated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    normalizedScoreUnique: uniqueIndex("normalized_score_unique").on(t.eventId, t.submissionId),
+  }),
+);
 export const pairwiseComparisons = pgTable("pairwise_comparisons", {
   id: id(),
   eventId: uuid("event_id")
@@ -259,16 +283,16 @@ export const auditLogs = pgTable("audit_logs", {
 // users.role carries only the global flag (SUPERADMIN bypasses all event checks);
 // every other permission resolves through this table, defaulting to PARTICIPANT.
 export const eventRoles = pgTable("event_roles", {
-    id: id(),
-    eventId: uuid("event_id")
-      .notNull()
-      .references(() => events.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    role: eventRoleEnum("role").notNull(),
-    createdAt: createdAt(),
-  },
+  id: id(),
+  eventId: uuid("event_id")
+    .notNull()
+    .references(() => events.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  role: eventRoleEnum("role").notNull(),
+  createdAt: createdAt(),
+},
   (t) => ({
     eventRoleUnique: uniqueIndex("event_role_unique").on(t.eventId, t.userId),
     eventRoleUserIdx: index("event_role_user_idx").on(t.userId),
@@ -305,6 +329,8 @@ export function canAssignEventRole(
 export type EventStatus = (typeof eventStatusEnum.enumValues)[number];
 export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
+export type NormalizedScore = typeof normalizedScores.$inferSelect;
+export type NewNormalizedScore = typeof normalizedScores.$inferInsert;
 
 export const allTables = {
   users,
@@ -320,6 +346,7 @@ export const allTables = {
   judgeTracks,
   judgeAssignments,
   scores,
+  normalizedScores,
   pairwiseComparisons,
   votes,
   auditLogs,
