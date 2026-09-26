@@ -329,6 +329,7 @@ export function canAssignEventRole(
 export type EventStatus = (typeof eventStatusEnum.enumValues)[number];
 export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
+export type NewRubric = typeof rubrics.$inferInsert;
 export type NormalizedScore = typeof normalizedScores.$inferSelect;
 export type NewNormalizedScore = typeof normalizedScores.$inferInsert;
 

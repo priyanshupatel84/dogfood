@@ -125,7 +125,7 @@ export async function POST(request: Request) {
         actorId: session.user.id,
         eventId: body.eventId,
         submissionIds: body.submissionIds,
-        k: body.k,
+        k: body.judgesPerSubmission,
       })
       return NextResponse.json({
         created: result.created,
